@@ -8,7 +8,8 @@
 
 ## 📌 Overview
 
-NexCart is a modern e-commerce website developed to provide users with a convenient and user-friendly online shopping experience. The application features a clean interface, responsive layout, and smooth navigation, allowing users to explore products easily.
+NexCart is a modern e-commerce website developed to provide users with a convenient and user-friendly online shopping experience. The application features a clean interface, responsive layout, and smooth navigation, allowing users to explore products easily.Here in this platform we can directly give access to the seller without any third person .
+
 
 The project focuses on creating an attractive frontend experience using modern web development technologies.
 
