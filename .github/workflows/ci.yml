@@ -1,0 +1,52 @@
+name: CI
+
+# Runs on every push and pull request so regressions are caught before merge,
+# not after deploy. This does NOT change any application logic — it only
+# verifies that the existing code still type-checks, lints, and builds.
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    # Provide dummy env vars so `next build` / `prisma generate` don't fail
+    # at build time due to missing secrets. Real secrets are only needed at
+    # runtime (set in your hosting provider, e.g. Vercel).
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://user:pass@localhost:5432/nexcart' }}
+      NEXT_PUBLIC_FIREBASE_API_KEY: dummy
+      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: dummy.firebaseapp.com
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: dummy
+      NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: dummy.appspot.com
+      NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "000000000000"
+      NEXT_PUBLIC_FIREBASE_APP_ID: dummy
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npx next build

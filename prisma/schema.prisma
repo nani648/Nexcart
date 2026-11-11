@@ -1,0 +1,884 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  CUSTOMER
+  SELLER
+  ADMIN
+  DELIVERY_AGENT
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum DeliveryMethod {
+  SELF
+  COURIER
+  PICKUP
+}
+
+enum DeliveryStatus {
+  PENDING
+  PREPARING
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED
+  PACKED
+  READY_FOR_PICKUP
+  PICKED_UP
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum SellerStatus {
+  PENDING
+  APPROVED
+  SUSPENDED
+  REJECTED
+}
+
+enum ProductCondition {
+  ORIGINAL
+  REFURBISHED
+  BOX_OPEN
+}
+
+enum ReturnStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  REFUNDED
+}
+
+enum ReturnReason {
+  DEFECTIVE
+  WRONG_ITEM
+  NOT_AS_DESCRIBED
+  DAMAGED
+  CHANGE_OF_MIND
+  OTHER
+}
+
+enum NotificationType {
+  ORDER_PLACED
+  ORDER_SHIPPED
+  ORDER_DELIVERED
+  LOW_STOCK
+  SELLER_APPROVED
+  NEW_REVIEW
+  RETURN_UPDATE
+  PICKUP_READY
+  ORDER_PACKED
+  NEW_PRODUCT
+  STORE_FOLLOW
+  COD_OTP
+  COD_COLLECTED
+  COD_REFUND_DONE
+  BANK_DETAILS_REQUIRED
+  GSTIN_REQUIRED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  firebaseUid String   @unique
+  email     String   @unique
+  name      String?
+  avatar    String?
+  // Nullable-safe unique: Postgres treats multiple NULLs as distinct, so
+  // accounts with no phone on file are unaffected. Prevents two accounts
+  // sharing a number, which would break phone/OTP-based identity checks.
+  phone     String?  @unique
+  role      Role     @default(CUSTOMER)
+  emailVerified Boolean @default(false)
+  emailVerificationToken String? @unique
+  emailVerificationTokenExpiresAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  seller    Seller?
+  orders    Order[]
+  reviews      Review[]
+  reviewVotes  ReviewVote[]
+  sellerRatings SellerRating[]
+  cart      Cart?
+  wishlist  Wishlist?
+  addresses Address[]
+  payments  Payment[]
+  returns   Return[]
+  notifications Notification[]
+  productQAs     ProductQA[]
+  storeFollows   StoreFollow[]
+  fcmTokens      FcmToken[]
+  giftRegistries GiftRegistry[]
+  deliveryAgent  DeliveryAgent?
+
+  @@index([firebaseUid])
+  @@index([email])
+  @@index([emailVerified])
+}
+
+model Seller {
+  id           String       @id @default(cuid())
+  sellerId     String       @unique
+  userId       String       @unique
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storeName    String
+  // Seller-chosen vanity handle used for the public store URL
+  // (nexcart.com/<storeHandle>). ALWAYS stored lowercase — Postgres unique
+  // constraints are case-sensitive, so normalising on write is what stops
+  // "Pickles_02" and "pickles_02" from both being registered.
+  // Nullable so existing sellers aren't broken; they are prompted to pick one.
+  storeHandle  String?      @unique
+  description  String?
+  logo         String?
+  banner       String?
+  status       SellerStatus @default(PENDING)
+  rating       Float        @default(0)
+  totalRatings Int          @default(0)
+  totalReviews Int          @default(0)
+  totalOrders  Int          @default(0)
+  isVerified   Boolean      @default(false)
+  // GST registration number — mandatory for all sellers (Indian GST law
+  // requires GSTIN for any seller transacting through an e-commerce
+  // operator, regardless of turnover). Nullable at the DB level so
+  // existing sellers aren't broken by this migration; enforced as
+  // required at the application layer (registration form + settings).
+  gstin        String?
+  // State of the seller's principal place of business — used to determine
+  // CGST+SGST (intra-state) vs IGST (inter-state) on generated invoices.
+  state        String?
+  totalSales   Int          @default(0)
+  isLocalStore     Boolean      @default(false)
+  storeAddress     String?
+  pickupHours      String?
+  pickupAcceptsCOD Boolean      @default(false)
+  walletBalance    Float        @default(0)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  products     Product[]
+  orderItems   OrderItem[]
+  offers       SellerOffer[]
+  ratings      SellerRating[]
+  returns      Return[] @relation("SellerReturns")
+  answeredQAs  ProductQA[]
+  bankAccount  SellerBankAccount?
+  payouts      Payout[]
+  transactions SellerTransaction[]
+  followers    StoreFollow[]
+  storeViews   StoreView[]
+  highlights        String[]     @default([])
+  lastSeenAt        DateTime?
+  spinWheelEnabled     Boolean      @default(false)
+  spinWheelSegments    Json?
+  quickTags            String[]     @default([])
+  festivalThemeEnabled Boolean      @default(true)
+  shakeConfig          Json?
+  floatingBarConfig   Json?
+  // Optional animated particle overlay on the storefront banner (golden
+  // stars, confetti, snow, etc — see src/lib/scrolling-designs.ts for the
+  // fixed set of effect keys). Shape: { enabled: boolean, effect: string }.
+  // Plain Json, same reasoning as shakeConfig/floatingBarConfig — the list
+  // of effects can grow without a migration.
+  scrollingDesign      Json?
+  galleryProductIds    String[]     @default([])
+  storeColor           String?
+  // Background colour/gradient for the storefront page area behind the
+  // product grid (banner, avatar row, "Curated for You" strip, product
+  // cards). Null/empty means "auto" — a low-opacity tint of the banner
+  // colour, computed at render time; a value here (same hex/gradient format
+  // as storeColor) renders as-is, full strength, instead of that auto tint.
+  productBgColor       String?
+  storePaused          Boolean  @default(false)
+  storePausedMsg       String?
+  collections          StoreCollection[]
+  deliveryAgents       DeliveryAgent[]
+  handleHistory        StoreHandleHistory[]
+
+  @@index([sellerId])
+  @@index([status])
+  @@index([status, rating])
+  @@index([isVerified])
+  @@index([totalOrders])
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  image       String?
+  isActive    Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  products Product[]
+
+  @@index([isActive])
+  @@index([sortOrder])
+}
+
+model Product {
+  id           String    @id @default(cuid())
+  productId    String    @unique
+  sellerId     String
+  seller       Seller    @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  categoryId   String?
+  category     Category? @relation(fields: [categoryId], references: [id])
+  name         String
+  description  String
+  deliveryInfo String?
+  price        Float
+  comparePrice Float?
+  stock        Int       @default(0)
+  images       String[]
+  tags         String[]
+  isActive       Boolean   @default(true)
+  isFeatured     Boolean   @default(false)
+  isFlashSale    Boolean   @default(false)
+  // Storefront card style for this product — see src/lib/card-designs.ts.
+  // Stored as a plain string rather than an enum so designs can be added or
+  // retired without a schema migration; unknown values fall back to the default
+  // at render time. Null means "never chosen" (products predating the feature).
+  // A "random" choice is resolved to a concrete key on write, never at render.
+  cardDesign     String?
+  // Text style for the card title/price — a separate axis from cardDesign, so
+  // any font can pair with any frame. See CARD_FONTS in src/lib/card-designs.ts.
+  cardFont       String?
+  // Manual override for the storefront card's info panel — set by the
+  // seller on the Basic Information step. When filled, this exact text
+  // replaces the auto title+description block shown under the photo on
+  // THIS product's card only (product name/description elsewhere — detail
+  // page, search, cart — are unaffected). Null/empty means "auto" (show
+  // the normal name + description snippet), so every existing product is
+  // unchanged until a seller fills this in.
+  cardDisplayText String?
+  // Colour/gradient (same "#rrggbb" or "#rrggbb,#rrggbb" format as storeColor)
+  // for a thin padded border frame drawn around THIS product's card — set
+  // per-product on the Edit design page. Null/empty means "no border".
+  cardBorderColor String?
+  // Focal point for THIS product's cover photo on the storefront card, as a
+  // CSS object-position value (e.g. "50% 20%"). Cards crop the photo to
+  // fill a fixed-size box (object-cover) — for a tall portrait shot that
+  // means something has to be cut off top/bottom, and center-cropping isn't
+  // always the right call (e.g. it can cut off a model's face). Set by the
+  // seller dragging the photo in the Product Card Design preview. Null
+  // means "center center", today's default — unchanged for every existing
+  // product until a seller repositions one.
+  cardImagePosition String?
+  condition      ProductCondition @default(ORIGINAL)
+  productTypeId  String?
+  specifications Json?
+  variantImages  Json?
+  // Whether the storefront card's variant picker (the small "Options ▾"
+  // button + dropdown that lets a shopper pick a size/color right from the
+  // grid, without opening the product page) is shown for THIS product.
+  // Defaults to true so every existing multi-variant product keeps behaving
+  // exactly as before; a seller can turn it off on the Add/Edit Product page
+  // if they'd rather keep the card clean and have shoppers choose the
+  // variant on the product detail page instead. Has no effect on products
+  // with 0 or 1 variant — the picker never renders for those regardless.
+  showVariantsOnCard Boolean @default(true)
+  // Whether the storefront card auto-slides through ALL of this product's
+  // photos on a timer (like the store's Highlights banner, but slower) —
+  // set per-product on the Edit design page. Defaults to false so every
+  // existing product keeps its current look (primary photo, swaps to the
+  // 2nd photo on hover only) until a seller explicitly turns it on. Has no
+  // effect on products with 0 or 1 image — nothing to slide between.
+  cardImageAutoSlide Boolean @default(false)
+  rating         Float     @default(0)
+  reviewCount    Int       @default(0)
+  salesCount     Int       @default(0)
+  // GST rate slab (%) applied to this product, e.g. 0, 5, 12, 18, 28.
+  // Nullable — if not set, invoices show "GST breakup not available" for
+  // this item (price treated as inclusive of all taxes).
+  gstRate        Float?
+  // Harmonized System of Nomenclature code for GST invoices.
+  hsnCode        String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  variants      ProductVariant[]
+  orderItems    OrderItem[]
+  reviews       Review[]
+  cartItems     CartItem[]
+  wishlistItems WishlistItem[]
+  returns       Return[]
+  qas           ProductQA[]
+
+  @@index([productId])
+  @@index([sellerId])
+  @@index([categoryId])
+  @@index([name])
+  @@index([isActive])
+  @@index([isActive, createdAt])
+  @@index([isActive, isFeatured])
+  @@index([isActive, salesCount])
+  @@index([isActive, price])
+  @@index([sellerId, isActive])
+  @@index([sellerId, createdAt])
+}
+
+model ProductVariant {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name      String
+  value     String
+  stock     Int     @default(0)
+  price     Float?
+  comparePrice Float?
+
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@index([productId])
+}
+
+model Order {
+  id             String      @id @default(cuid())
+  orderId        String      @unique @default(cuid())
+  userId         String
+  user           User        @relation(fields: [userId], references: [id])
+  addressId      String?
+  address        Address?    @relation(fields: [addressId], references: [id])
+  status           OrderStatus    @default(PENDING)
+  totalAmount      Float
+  discountAmount   Float          @default(0)
+  couponCode       String?
+  notes            String?
+  deliveryMethod   DeliveryMethod?
+  deliveryStatus   DeliveryStatus @default(PENDING)
+  trackingId       String?
+  courierName      String?
+  shippingLabel    String?
+  mapsRoute        String?
+  estimatedDelivery DateTime?
+  sellerLatitude   Float?
+  sellerLongitude  Float?
+  estimatedArrival DateTime?
+  selfDeliveryEnabled Boolean    @default(false)
+  pickupCode         String?
+  pickupPayment      String?
+  deliveryFeeCharged Float?
+  isCOD              Boolean        @default(false)
+  codOtp             String?
+  codCollectedAt     DateTime?
+  deliveryAgentId    String?
+  deliveryAgent      DeliveryAgent? @relation(fields: [deliveryAgentId], references: [id])
+  deliveredAt        DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  items    OrderItem[]
+  payments Payment[]
+  ratings  SellerRating[]
+  returns  Return[]
+  payouts  Payout[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([orderId])
+  @@index([userId, createdAt])
+  @@index([userId, status])
+  @@index([deliveryAgentId, deliveryStatus])
+  @@index([deliveryStatus])
+}
+
+model OrderItem {
+  id        String         @id @default(cuid())
+  orderId   String
+  // Restrict, not Cascade: an Order's line items are the purchase record
+  // itself (quantity/price actually paid). Deleting the Order row must
+  // never silently wipe them — cancel via status=CANCELLED instead of
+  // hard-deleting Order rows.
+  order     Order          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  productId String
+  product   Product        @relation(fields: [productId], references: [id])
+  sellerId  String
+  seller    Seller         @relation(fields: [sellerId], references: [id])
+  variantId String?
+  variant   ProductVariant? @relation(fields: [variantId], references: [id])
+  quantity  Int
+  price     Float
+  status    OrderStatus    @default(PENDING)
+
+  @@index([orderId])
+  @@index([sellerId])
+  @@index([productId])
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  userId            String
+  user              User          @relation(fields: [userId], references: [id])
+  orderId           String?
+  order             Order?        @relation(fields: [orderId], references: [id])
+  razorpayOrderId   String?
+  razorpayPaymentId String?       @unique
+  razorpaySignature String?
+  amount            Float
+  currency          String        @default("INR")
+  status            PaymentStatus @default(PENDING)
+  createdAt         DateTime      @default(now())
+
+  @@index([userId])
+  @@index([razorpayPaymentId])
+  @@index([razorpayOrderId])
+  @@index([userId, status])
+}
+
+model Review {
+  id              String       @id @default(cuid())
+  productId       String
+  // Restrict, not Cascade: reviews are reputation/audit history, not
+  // disposable data. Deleting a Product must not silently wipe its ratings,
+  // photos and seller replies — soft-delete the product (isActive=false)
+  // instead of hard-deleting one that has reviews.
+  product         Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  userId          String
+  user            User         @relation(fields: [userId], references: [id])
+  rating          Int
+  title           String?
+  body            String?
+  images          String[]
+  helpfulCount    Int          @default(0)
+  sellerReply     String?
+  sellerRepliedAt DateTime?
+  votes           ReviewVote[]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@unique([productId, userId])
+  @@index([productId])
+}
+
+model ReviewVote {
+  id        String   @id @default(cuid())
+  reviewId  String
+  review    Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  isHelpful Boolean
+  createdAt DateTime @default(now())
+
+  @@unique([reviewId, userId])
+  @@index([reviewId])
+}
+
+model ProductQA {
+  id          String    @id @default(cuid())
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  question    String
+  answer      String?
+  answeredBy  String?
+  seller      Seller?   @relation(fields: [answeredBy], references: [id])
+  answeredAt  DateTime?
+  isPublished Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  @@index([productId])
+  @@index([userId])
+}
+
+model Cart {
+  id        String     @id @default(cuid())
+  userId    String     @unique
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  items CartItem[]
+}
+
+model CartItem {
+  id        String          @id @default(cuid())
+  cartId    String
+  cart      Cart            @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String
+  // Cascade: a cart entry is disposable, not audit data — a product sitting
+  // in a stranger's cart should never block a seller from deleting it.
+  product   Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId String?
+  variant   ProductVariant? @relation(fields: [variantId], references: [id])
+  quantity  Int             @default(1)
+  createdAt DateTime        @default(now())
+
+  @@unique([cartId, productId, variantId])
+}
+
+model Wishlist {
+  id        String         @id @default(cuid())
+  userId    String         @unique
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now())
+
+  items WishlistItem[]
+}
+
+model WishlistItem {
+  id         String   @id @default(cuid())
+  wishlistId String
+  wishlist   Wishlist @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
+  productId  String
+  // Cascade: same reasoning as CartItem.product — a wishlist entry is
+  // disposable, must never block deleting the product it points to.
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([wishlistId, productId])
+}
+
+model Address {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  phone     String
+  line1     String
+  line2     String?
+  city      String
+  state     String
+  pincode   String
+  country   String   @default("India")
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  orders Order[]
+
+  @@index([userId])
+}
+
+model Coupon {
+  id           String    @id @default(cuid())
+  code         String    @unique
+  discountType String
+  discount     Float
+  minOrder     Float     @default(0)
+  maxUses      Int?
+  usedCount    Int       @default(0)
+  isActive     Boolean   @default(true)
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([isActive, expiresAt])
+}
+
+model SellerOffer {
+  id                  String   @id @default(cuid())
+  sellerId            String
+  seller              Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  title               String   // e.g. "Buy 3 Get 1 Free"
+  description         String?  // e.g. "Add 4 items to cart, get 1 free automatically"
+  offerType           String   // "BUY_X_GET_Y" | "PERCENT_OFF" | "FLAT_OFF" | "FREE_SHIPPING" | "CUSTOM" | "DEALS_OF_THE_DAY"
+  buyQty              Int?     // For BUY_X_GET_Y
+  getQty              Int?     // For BUY_X_GET_Y
+  discountVal         Float?   // For PERCENT_OFF / FLAT_OFF
+  badgeColor          String?  // auto-computed hex
+  isActive            Boolean  @default(true)
+  sortOrder           Int      @default(0)
+  linkedProductId     String?  // ✅ Product ID to link this offer to (for single product)
+  selectedProductIds  String?  // ✅ NEW: JSON array of product IDs (for deals of the day)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([sellerId])
+  @@index([sellerId, isActive])
+  @@index([linkedProductId])
+}
+
+model SellerRating {
+  id        String   @id @default(cuid())
+  sellerId  String
+  seller    Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  rating    Int      // 1-5
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sellerId, orderId, userId])
+  @@index([sellerId])
+  @@index([userId])
+  @@index([orderId])
+}
+
+model Return {
+  id              String       @id @default(cuid())
+  returnId        String       @unique @default(cuid())
+  orderId         String
+  // Restrict on both: a Return is the refund/audit trail (refundAmount,
+  // gateway refund IDs) for an Order+Product. Hard-deleting either must
+  // never silently take the return record with it.
+  order           Order        @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderItemId     String
+  productId       String
+  product         Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  sellerId        String
+  seller          Seller       @relation("SellerReturns", fields: [sellerId], references: [id], onDelete: Cascade)
+  buyerId         String
+  buyer           User         @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  reason          ReturnReason
+  description     String?
+  images          String[]
+  status             ReturnStatus @default(REQUESTED)
+  sellerNote         String?
+  refundAmount       Float?
+  requestedAt        DateTime     @default(now())
+  approvedAt         DateTime?
+  rejectedAt         DateTime?
+  refundedAt         DateTime?
+  reverseAwb         String?
+  returnShippingCost Float        @default(70)
+  shippingChargedTo  String       @default("SELLER")
+  productReceivedAt  DateTime?
+  razorpayRefundId   String?
+  customerTrackingId String?
+  codRefundRef       String?
+  codRefundedAt      DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@index([orderId])
+  @@index([sellerId])
+  @@index([buyerId])
+  @@index([status])
+  @@index([returnId])
+}
+
+model Notification {
+  id        String             @id @default(cuid())
+  userId    String
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  isRead    Boolean            @default(false)
+  link      String?
+  imageUrl  String?
+  createdAt DateTime           @default(now())
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+}
+
+model StoreFollow {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sellerId  String
+  seller    Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, sellerId])
+  @@index([userId])
+  @@index([sellerId])
+}
+
+model StoreView {
+  id        String   @id @default(cuid())
+  sellerId  String
+  seller    Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  sessionId String
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([sellerId, sessionId])
+  @@index([sellerId, updatedAt])
+}
+
+model FcmToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+model SellerBankAccount {
+  id                    String   @id @default(cuid())
+  sellerId              String   @unique
+  seller                Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  accountHolderName     String
+  accountNumber         String
+  ifscCode              String
+  bankName              String?
+  branchName            String?
+  accountType           String   @default("savings")
+  razorpayContactId     String?
+  razorpayFundAccountId String?
+  isVerified            Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([sellerId])
+}
+
+model GiftRegistry {
+  id          String             @id @default(cuid())
+  userId      String
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  occasion    String             @default("OTHER")
+  eventDate   DateTime?
+  description String?
+  slug        String             @unique
+  items       GiftRegistryItem[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([userId])
+  @@index([slug])
+}
+
+model GiftRegistryItem {
+  id          String       @id @default(cuid())
+  registryId  String
+  registry    GiftRegistry @relation(fields: [registryId], references: [id], onDelete: Cascade)
+  name        String
+  image       String?
+  price       Float
+  productSlug String
+  quantity    Int          @default(1)
+  purchased   Int          @default(0)
+  note        String?
+  priority    String       @default("MEDIUM")
+  createdAt   DateTime     @default(now())
+
+  @@index([registryId])
+}
+
+model StoreCollection {
+  id         String   @id @default(cuid())
+  sellerId   String
+  seller     Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  name       String
+  image      String?
+  filterTag  String
+  productIds String   @default("[]")
+  sortOrder  Int      @default(0)
+  // Heading font (see lib/collection-heading-styles.ts / card-designs.ts
+  // CARD_FONTS) and icon-frame shape (see lib/collection-shapes.ts) for this
+  // collection's storefront circle. The app still reads/writes both via raw
+  // SQL ($queryRawUnsafe, not `db.storeCollection.update`) for backward
+  // compatibility with the fallback logic already written against a
+  // database that might not have these columns yet — but they MUST stay
+  // declared here. Leaving a real column out of the Prisma model makes
+  // `prisma db push`/`migrate` treat it as drift and DROP it to match this
+  // file, which is exactly what silently deleted both columns the first
+  // time `db push` ran after they were added by hand.
+  fontStyle  String?
+  iconShape  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([sellerId])
+  @@index([sellerId, sortOrder])
+}
+
+model SellerTransaction {
+  id          String   @id @default(cuid())
+  sellerId    String
+  seller      Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  type        String   // "ORDER_CREDIT" | "DELIVERY_DEBIT" | "PAYOUT_DEBIT"
+  amount      Float
+  description String
+  orderId     String?
+  createdAt   DateTime @default(now())
+
+  @@index([sellerId])
+  @@index([sellerId, createdAt])
+}
+
+model Payout {
+  id                String       @id @default(cuid())
+  payoutId          String       @unique @default(cuid())
+  sellerId          String
+  seller            Seller       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  orderId           String?
+  order             Order?       @relation(fields: [orderId], references: [id])
+  amount            Float
+  platformFee       Float        @default(0)
+  netAmount         Float
+  razorpayPayoutId  String?
+  status            PayoutStatus @default(PENDING)
+  failureReason     String?
+  narration         String?
+  initiatedAt       DateTime     @default(now())
+  processedAt       DateTime?
+
+  // Prevents duplicate auto-generated payouts for the same seller+order
+  // (e.g. from retried Razorpay webhooks). Manual payout requests have
+  // orderId = NULL, and Postgres treats multiple NULLs as distinct, so
+  // this does not block multiple manual withdrawal requests.
+  @@unique([sellerId, orderId])
+  @@index([sellerId])
+  @@index([status])
+  @@index([orderId])
+}
+
+/// Retired store handles. When a seller changes their handle the old one is
+/// parked here so every link, QR code and social post already shared keeps
+/// working via a permanent redirect. Sharing the URL is the whole point of the
+/// feature, so silently breaking old links is not acceptable.
+/// Rows here also reserve the handle — nobody else can claim a handle that
+/// still redirects somewhere.
+model StoreHandleHistory {
+  id        String   @id @default(cuid())
+  handle    String   @unique
+  sellerId  String
+  seller    Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([sellerId])
+}
+
+model DeliveryAgent {
+  id        String   @id @default(cuid())
+  agentId   String   @unique @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sellerId  String
+  seller    Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders    Order[]
+
+  @@index([sellerId])
+  @@index([userId])
+}

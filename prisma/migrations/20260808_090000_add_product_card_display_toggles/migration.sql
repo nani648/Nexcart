@@ -1,0 +1,7 @@
+-- NO-OP — this migration originally added cardShowStoreName/cardShowVariants/
+-- cardShowPrice/cardShowOffer columns for a feature that was reverted before
+-- ever being applied to any database. The four ALTER TABLE statements were
+-- removed so this migration doesn't add columns that no longer exist in
+-- schema.prisma (which would cause drift). Left as an empty file — deleting
+-- migration folders isn't possible from here — rather than renumbering
+-- history. Safe to run; it does nothing.

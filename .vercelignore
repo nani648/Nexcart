@@ -1,0 +1,15 @@
+# Never upload secrets or local build output
+.env
+.env.*
+!.env.example
+node_modules
+.next
+.git
+.vercel
+# Not needed to run the site
+nexcart-catalog
+krishna-store-saree-photos
+*.docx
+~$*
+*.tmp.js
+tsconfig.tsbuildinfo

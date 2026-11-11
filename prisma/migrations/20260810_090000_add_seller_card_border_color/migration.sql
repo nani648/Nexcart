@@ -1,0 +1,6 @@
+-- NO-OP — this migration originally added a seller-level cardBorderColor
+-- column, but the feature was redesigned to be per-product (see the
+-- 20260811_* migration below) before this was ever applied to any
+-- database. Left empty rather than renumbering migration history.
+-- Deleting migration folders isn't possible from here. Safe to run; does
+-- nothing.

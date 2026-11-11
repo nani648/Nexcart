@@ -1,0 +1,17 @@
+-- Adds a per-collection icon shape (circle, arch, hexagon, star, …) so each
+-- Store Collection's tappable icon on the storefront can use its own frame
+-- shape, independent of the other collections. See
+-- src/lib/collection-shapes.ts for the shape registry and rendering notes.
+--
+-- StoreCollection's newer optional columns (this one, and "fontStyle") are
+-- added via plain ALTER TABLE + raw SQL reads/writes rather than a
+-- schema.prisma field — see src/app/api/sellers/collections/route.ts and
+-- src/lib/store-view.tsx, which already do this for "fontStyle" and follow
+-- the identical pattern here.
+--
+-- TEXT rather than an enum: shapes get added/retired over time, and any
+-- unrecognised value falls back to the default "circle" at render time (see
+-- resolveCollectionShape) instead of erroring. NULL means "no shape chosen
+-- yet" — the storefront falls back to "circle", i.e. every existing
+-- collection keeps rendering exactly as before until a seller picks a shape.
+ALTER TABLE "StoreCollection" ADD COLUMN IF NOT EXISTS "iconShape" TEXT;

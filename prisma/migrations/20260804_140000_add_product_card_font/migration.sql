@@ -1,0 +1,11 @@
+-- Per-product card text style (see CARD_FONTS in src/lib/card-designs.ts).
+--
+-- Deliberately a separate column from "cardDesign" rather than being folded
+-- into it: font and frame are independent choices, so a seller can put a
+-- handwritten title on a minimal card or a serif on the floral card. Combining
+-- them would have meant one key per combination (11 designs x 5 fonts = 55).
+--
+-- TEXT rather than an enum for the same reason as cardDesign: styles get added
+-- and retired, and unknown values fall back to the default at render time.
+-- NULL means the product predates this feature.
+ALTER TABLE "Product" ADD COLUMN "cardFont" TEXT;

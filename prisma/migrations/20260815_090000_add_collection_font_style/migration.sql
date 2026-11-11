@@ -1,0 +1,14 @@
+-- Adds a per-collection font style (Shirts, Pickles, etc.) so each Store
+-- Collection's storefront heading can use its own font, independent of the
+-- other collections. Reuses the SAME font registry already built for
+-- product cards (see src/lib/card-designs.ts CARD_FONTS / CardFontKey) —
+-- both are just a string key like "bebas" or "cormorant", so no new font
+-- loading/CSS is needed; the fonts are already imported in app/layout.tsx.
+--
+-- StoreCollection has no Prisma model (it's managed entirely via raw SQL —
+-- see src/app/api/sellers/collections/route.ts and src/lib/store-view.tsx),
+-- so this is a plain ALTER TABLE rather than a schema.prisma change.
+-- NULL means "no font chosen yet" — the storefront falls back to the same
+-- default ("sans") that products fall back to, so existing collections
+-- keep rendering exactly as before until a seller picks a font.
+ALTER TABLE "StoreCollection" ADD COLUMN IF NOT EXISTS "fontStyle" TEXT;
